@@ -1,46 +1,39 @@
 package main
 
 import (
-	"bufio"
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/n-nourdine/play-with-containers/inventory-app/database"
+	"github.com/n-nourdine/play-with-containers/inventory-app/handlers"
 )
 
 func main() {
-	l := log.New(os.Stdout, "inventory-app ", log.LstdFlags)
 
-	err := Load("/home/nasser/nasdev/play-with-containers/.env")
+	l := log.New(os.Stdout, fmt.Sprintf("inventory-app running on port %s -> ", os.Getenv("INVENTORY_APP_PORT")), log.LstdFlags)
+
+	h, err := handlers.NewHandler(l)
 	if err != nil {
-		l.Println(err)
-		os.Exit(1)
+		l.Fatal(err.Error())
 	}
+	defer h.C.Close()
 
-	db, err := database.NewConn(os.Getenv("DATABASE_URL"))
-	if err != nil {
-		l.Println(err.Error())
-		os.Exit(1)
-	}
-
-	defer db.Close()
 	mux := http.NewServeMux()
-
-	// mux.HandleFunc("GET /api/movies",) // retrieve all the movies. or retrieve all the movies with name in the title.(GET /api/movies?title=[name])
-	// mux.HandleFunc("GET /api/movies/{id}",) // retrieve a single movie by id.
-	// mux.HandleFunc("POST /api/movies",) // create a new product entry.
-	// mux.HandleFunc("PUT /api/movies/{id}",) // update a single movie by id.
-	// mux.HandleFunc("DELETE /api/movies/{id}",) // delete a single movie by id.
-	// mux.HandleFunc("DELETE /api/movies",) // delete all movies in the database.
+	mux.HandleFunc("GET /api/healthy", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("site ok")) })
+	mux.HandleFunc("GET /api/movies", h.GetMovies)           // retrieve all the movies. or retrieve all the movies with name in the title.(GET /api/movies?title=[name])
+	mux.HandleFunc("GET /api/movies/{id}", h.GetMovie)       // retrieve a single movie by id.
+	mux.HandleFunc("POST /api/movies", h.AddMovie)           // create a new product entry.
+	mux.HandleFunc("PUT /api/movies/{id}", h.UpdateMovie)    // update a single movie by id.
+	mux.HandleFunc("DELETE /api/movies/{id}", h.DeleteMovie) // delete a single movie by id.
+	mux.HandleFunc("DELETE /api/movies", h.DeleteMovies)     // delete all movies in the database.
 
 	s := http.Server{
-		Addr:         ":8080",
+		Addr:         fmt.Sprintf(":%v", os.Getenv("INVENTORY_APP_PORT")),
 		Handler:      mux,
 		ErrorLog:     l,
 		ReadTimeout:  5 * time.Second,
@@ -52,8 +45,7 @@ func main() {
 		l.Println()
 		err := s.ListenAndServe()
 		if err == nil {
-			log.Printf("Error starting server: %s/n", err)
-			os.Exit(1)
+			h.L.Fatalf("Error starting server: %s/n", err)
 		}
 
 	}()
@@ -63,39 +55,10 @@ func main() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	sig := <-c
-	log.Println("Got signal:", sig)
+	h.L.Println("Got signal:", sig)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
 	defer cancel()
 	s.Shutdown(ctx)
-}
-
-func Load(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if len(line) == 0 || line[0] == '#' {
-			continue
-		}
-
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		if key != "" {
-			os.Setenv(key, value)
-		}
-	}
-
-	return scanner.Err()
 }

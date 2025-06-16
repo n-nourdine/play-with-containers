@@ -1,0 +1,51 @@
+services:
+  inventory-db:
+    build:
+      context: ./docker/inventory_db
+      dockerfile: Dockerfile
+    container_name: inventory-database
+    environment:
+      INVENTORY_DB_HOST: ${INVENTORY_DB_HOST}
+      INVENTORY_DB_PORT: ${INVENTORY_DB_PORT}
+      INVENTORY_DB_USER: ${INVENTORY_DB_USER}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - inventory-database-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INVENTORY_DB_USER} -d ${INVENTORY_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app-network  
+
+  inventory-app:
+    build:
+      context: ./inventory-app
+      dockerfile: Dockerfile
+    container_name: inventory-app
+    ports:
+      - "8080:8080"
+    environment:
+      INVENTORY_DB_HOST: ${INVENTORY_DB_HOST}
+      INVENTORY_DB_PORT: ${INVENTORY_DB_PORT}
+      INVENTORY_DB_USER: ${INVENTORY_DB_USER}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
+      INVENTORY_APP_PORT: ${INVENTORY_APP_PORT}
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+volumes:
+  inventory-database-volume:
+
+networks:
+  app-network:
+    driver: bridge
