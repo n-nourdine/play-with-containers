@@ -2,9 +2,9 @@
 set -e
 
 export PGDATA="/var/lib/postgresql/data"
-export DB_NAME="${INVENTORY_DB_NAME:-movies_db}"
-export DB_USER="${INVENTORY_DB_USER:-nasdev}"
-export DB_PASSWORD="${INVENTORY_DB_PASSWORD:-passer}"
+export DB_NAME="${BILLING_DB_NAME:-billing_db}"
+export DB_USER="${BILLING_DB_USER:-nasdev}"
+export DB_PASSWORD="${BILLING_DB_PASSWORD:-passer}"
 
 # Create socket directory
 mkdir -p /run/postgresql
@@ -58,10 +58,11 @@ EOSQL
     echo "Creating tables in $DB_NAME..."
     psql_movies_cmd="psql -v ON_ERROR_STOP=1 --username $DB_USER --dbname $DB_NAME"
     $psql_movies_cmd <<EOSQL
-CREATE TABLE movies (
+CREATE TABLE orders (
     id TEXT PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    description VARCHAR(255)
+    user_id VARCHAR(255) NOT NULL,
+    number_of_items VARCHAR(255),
+    total_amount VARCHAR(255)
 );
 EOSQL
     fi

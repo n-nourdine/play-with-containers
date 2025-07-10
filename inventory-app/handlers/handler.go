@@ -144,6 +144,7 @@ func (h *Handler) AddMovie(rw http.ResponseWriter, r *http.Request) {
 	h.L.Printf("Movie added: %v\n", movie)
 
 }
+
 func (h *Handler) UpdateMovie(rw http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()

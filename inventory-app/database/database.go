@@ -53,7 +53,7 @@ func (m *MovieStream) Close() {
 func (m *MovieStream) Add(ctx context.Context, movie Movies) error {
 	tx, err := m.db.Begin(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("erreur lors du début de la transaction: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -62,7 +62,7 @@ func (m *MovieStream) Add(ctx context.Context, movie Movies) error {
 	}
 
 	if err = tx.Commit(ctx); err != nil {
-		return err
+		return fmt.Errorf("erreur lors du commit de la transaction: %w", err)
 	}
 
 	return nil
@@ -104,7 +104,7 @@ func (m *MovieStream) ListeByTitle(ctx context.Context, title string) ([]Movies,
 func (m *MovieStream) Liste(ctx context.Context) ([]Movies, error) {
 	rows, err := m.db.Query(ctx, "SELECT id, title, description FROM movies")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("erreur lors de la récupération des films: %w", err)
 	}
 	defer rows.Close()
 
@@ -115,14 +115,14 @@ func (m *MovieStream) Liste(ctx context.Context) ([]Movies, error) {
 
 		err := rows.Scan(&movie.ID, &movie.Title, &movie.Description)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("erreur lors du scan : %w", err)
 		}
 
 		movies = append(movies, movie)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("erreur lors de l'itération des lignes: %w", err)
 	}
 
 	return movies, nil
