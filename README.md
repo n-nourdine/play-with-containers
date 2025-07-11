@@ -32,7 +32,7 @@ TEST ENDPOINT:
 ``` bash
     curl -X POST http://localhost:8080/api/movies \
     -H "Content-Type: application/json" \
-    -d '{"title": "Inception", "description": "Un film sur les rêves"}'
+    -d '{"id":"skjsjndhshbb123hjbhB32","title": "Inception", "description": "Un film sur les rêves"}'
 ```
 2. Récupération de tous les films
 ``` bash
@@ -66,9 +66,20 @@ TEST ENDPOINT:
 First, clean up the existing containers:
 
 
-docker compose down
+docker compose down -v
 docker rm -f inventory-database
 
 For a complete fresh start (if needed):
 docker compose down --volumes --rmi all
 docker system prune -a
+
+
+lien doc rabbitmq:
+https://www.rabbitmq.com/docs/management-cli
+
+
+rabbitmqadmin --vhost="/" publish \
+    exchange="" \
+    routing_key="billing_queue" \
+    payload="Mon message de facturation" \
+    properties='{"delivery_mode":2,"content_type":"application/json"}'
