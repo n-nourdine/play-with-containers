@@ -1,218 +1,172 @@
 services:
-  rabbitmq-alpine:
+  inventory-db:
     build:
-      context: .
-      dockerfile: ./docker/rabbitmq/Dockerfile
-    image: rabbitmq-alpine
-    container_name: rabbitmq-alpine
-    hostname: rabbitmq-alpine
-    ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI
+      context: ./docker/inventory_db
+      dockerfile: Dockerfile
+    image: inventory-database
+    container_name: inventory-database
     environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: password
+      INVENTORY_DB_HOST: ${INVENTORY_DB_HOST}
+      INVENTORY_DB_PORT: ${INVENTORY_DB_PORT}
+      INVENTORY_DB_USER: ${INVENTORY_DB_USER}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
+    ports:
+      - "5432"
     volumes:
-      - rabbitmq_alpine_data:/var/lib/rabbitmq
-      - rabbitmq_alpine_logs:/var/log/rabbitmq
-    restart: unless-stopped
+      - inventory_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${INVENTORY_DB_USER} -d ${INVENTORY_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
-      - rabbitmq_network
+      - app-network  
+    restart: unless-stopped
 
-  # rabbitmq-debian:
+  billing-db:
+    build:
+      context: ./docker/billing_db
+      dockerfile: Dockerfile
+    image: billing-database
+    container_name: billing-database
+    environment:
+      BILLING_DB_HOST: ${BILLING_DB_HOST}
+      BILLING_DB_PORT: ${BILLING_DB_PORT}
+      BILLING_DB_USER: ${BILLING_DB_USER}
+      BILLING_DB_PASSWORD: ${BILLING_DB_PASSWORD}
+      BILLING_DB_NAME: ${BILLING_DB_NAME}
+    ports:
+      - "5432"
+    volumes:
+      - billing_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BILLING_DB_USER} -d ${BILLING_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app-network  
+    restart: unless-stopped
+
+  rabbitmq:
+    build:
+      context: ./docker/rabbitmq
+      dockerfile: Dockerfile
+    image: rabbitmq-server
+    container_name: rabbitmq-queue
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - RABBITMQ_QUEUE_NAME=${RABBITMQ_QUEUE_NAME}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_VHOST=${RABBITMQ_VHOST}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_logs:/var/log/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    networks:
+      - app-network  
+    restart: unless-stopped
+
+  inventory-app:
+    build:
+      context: ./inventory-app
+      dockerfile: Dockerfile
+    image: inventory-app
+    container_name: inventory-app
+    ports:
+      - "8080:8080"
+    environment:
+      INVENTORY_DB_HOST: ${INVENTORY_DB_HOST}
+      INVENTORY_DB_PORT: ${INVENTORY_DB_PORT}
+      INVENTORY_DB_USER: ${INVENTORY_DB_USER}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
+      INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
+      INVENTORY_APP_PORT: ${INVENTORY_APP_PORT}
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  billing-app:
+    build:
+      context: ./billing-app
+      dockerfile: Dockerfile
+    image: billing-app
+    container_name: billing-app
+    ports:
+      - "8081:8081"
+    environment:
+      BILLING_DB_HOST: ${BILLING_DB_HOST}
+      BILLING_DB_PORT: ${BILLING_DB_PORT}
+      BILLING_DB_USER: ${BILLING_DB_USER}
+      BILLING_DB_NAME: ${BILLING_DB_NAME}
+      BILLING_APP_PORT: ${BILLING_APP_PORT}
+      BILLING_DB_PASSWORD: ${BILLING_DB_PASSWORD}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_QUEUE_NAME: ${RABBITMQ_QUEUE_NAME}
+    depends_on:
+      billing-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # api-gateway:
   #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.debian
-  #   container_name: rabbitmq-debian
-  #   hostname: rabbitmq-debian
-  #   ports:
-  #     - "5673:5672"    # AMQP port (different to avoid conflicts)
-  #     - "15673:15672"  # Management UI (different to avoid conflicts)
+  #     context: ./api-gateway
+  #     dockerfile: Dockerfile
+  #   image: api-gateway
+  #   container_name: api-gateway
   #   environment:
-  #     RABBITMQ_DEFAULT_USER: admin
-  #     RABBITMQ_DEFAULT_PASS: password
+  #     API_GATEWAY_PORT: ${API_GATEWAY_PORT}
+  #     INVENTORY_HOST: ${INVENTORY_DB_HOST}
+  #     INVENTORY_PORT: ${INVENTORY_APP_PORT}
+  #     RABBITMQ_HOST: ${RABBITMQ_HOST}
+  #     RABBITMQ_PORT: ${RABBITMQ_PORT}
+  #     RABBITMQ_USER: ${RABBITMQ_USER}
+  #     RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+  #     RABBITMQ_QUEUE_NAME: ${RABBITMQ_QUEUE_NAME}
+  #   ports:
+  #     - "3000:3000"  # Only service accessible from host/client
+  #   depends_on:
+  #     inventory-app:
+  #       condition: service_started
+  #     rabbitmq-queue:
+  #       condition: service_healthy
   #   volumes:
-  #     - rabbitmq_debian_data:/var/lib/rabbitmq
-  #     - rabbitmq_debian_logs:/var/log/rabbitmq
-  #   restart: unless-stopped
+  #     - api-gateway-volume:/var/log/api-gateway  # Log persistence
   #   networks:
-  #     - rabbitmq_network
+  #     - app-network
+  #   restart: unless-stopped
 
 volumes:
-  rabbitmq_alpine_data:
-  rabbitmq_alpine_logs:
-  rabbitmq_debian_data:
-  rabbitmq_debian_logs:
+  inventory_data:
+  billing_data:
+  rabbitmq_data:
+  rabbitmq_logs:
+  # api-gateway:
 
 networks:
-  rabbitmq_network:
+  app-network:
+    name: app-network
     driver: bridge
-
-# services:
-#   inventory-db:
-#     build:
-#       context: ./docker/inventory_db
-#       dockerfile: Dockerfile
-#     image: inventory-database
-#     container_name: inventory-database
-#     environment:
-#       INVENTORY_DB_HOST: ${INVENTORY_DB_HOST}
-#       INVENTORY_DB_PORT: ${INVENTORY_DB_PORT}
-#       INVENTORY_DB_USER: ${INVENTORY_DB_USER}
-#       INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
-#       INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
-#     ports:
-#       - "5432"
-#     volumes:
-#       - inventory-database-volume:/var/lib/postgresql/data
-#     healthcheck:
-#       test: ["CMD-SHELL", "pg_isready -U ${INVENTORY_DB_USER} -d ${INVENTORY_DB_NAME}"]
-#       interval: 10s
-#       timeout: 5s
-#       retries: 5
-#       start_period: 30s
-#     networks:
-#       - app-network  
-#     restart: unless-stopped
-
-#   billing-db:
-#     build:
-#       context: ./docker/billing_db
-#       dockerfile: Dockerfile
-#     image: billing-database
-#     container_name: billing-database
-#     environment:
-#       BILLING_DB_HOST: ${BILLING_DB_HOST}
-#       BILLING_DB_PORT: ${BILLING_DB_PORT}
-#       BILLING_DB_USER: ${BILLING_DB_USER}
-#       BILLING_DB_PASSWORD: ${BILLING_DB_PASSWORD}
-#       BILLING_DB_NAME: ${BILLING_DB_NAME}
-#     ports:
-#       - "5432"
-#     volumes:
-#       - billing-database-volume:/var/lib/postgresql/data
-#     healthcheck:
-#       test: ["CMD-SHELL", "pg_isready -U ${BILLING_DB_USER} -d ${BILLING_DB_NAME}"]
-#       interval: 10s
-#       timeout: 5s
-#       retries: 5
-#       start_period: 30s
-#     networks:
-#       - app-network  
-#     restart: unless-stopped
-
-#   rabbitmq-queue:
-#     image: rabbitmq:3.13-management-alpine
-#     container_name: rabbitmq-queue
-#     environment:
-#       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-admin}
-#       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-password}
-#     ports:
-#       - "15672:15672"  # Management UI
-#       - "5672:5672"    # AMQP
-#     volumes:
-#       - rabbitmq_data:/var/lib/rabbitmq
-#       - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf
-#       - ./docker/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json
-#     healthcheck:
-#       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-#       interval: 30s
-#       timeout: 10s
-#       retries: 5
-#       start_period: 60s
-#     networks:
-#       - app-network
-#     restart: unless-stopped
-
-#   inventory-app:
-#     build:
-#       context: ./inventory-app
-#       dockerfile: Dockerfile
-#     image: inventory-app
-#     container_name: inventory-app
-#     ports:
-#       - "8080:8080"
-#     environment:
-#       INVENTORY_DB_HOST: ${INVENTORY_DB_HOST}
-#       INVENTORY_DB_PORT: ${INVENTORY_DB_PORT}
-#       INVENTORY_DB_USER: ${INVENTORY_DB_USER}
-#       INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD}
-#       INVENTORY_DB_NAME: ${INVENTORY_DB_NAME}
-#       INVENTORY_APP_PORT: ${INVENTORY_APP_PORT}
-#     depends_on:
-#       inventory-db:
-#         condition: service_healthy
-#     networks:
-#       - app-network
-#     # restart: unless-stopped
-
-#   billing-app:
-#     build:
-#       context: ./billing-app
-#       dockerfile: Dockerfile
-#     image: billing-app
-#     container_name: billing-app
-#     ports:
-#       - "8081:8081"
-#     environment:
-#       BILLING_DB_HOST: ${BILLING_DB_HOST}
-#       BILLING_DB_PORT: ${BILLING_DB_PORT}
-#       BILLING_DB_USER: ${BILLING_DB_USER}
-#       BILLING_DB_NAME: ${BILLING_DB_NAME}
-#       BILLING_APP_PORT: ${BILLING_APP_PORT}
-#       BILLING_DB_PASSWORD: ${BILLING_DB_PASSWORD}
-#       RABBITMQ_HOST: ${RABBITMQ_HOST}
-#       RABBITMQ_PORT: ${RABBITMQ_PORT}
-#       RABBITMQ_USER: ${RABBITMQ_USER}
-#       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-#       RABBITMQ_QUEUE_NAME: ${RABBITMQ_QUEUE_NAME}
-#     depends_on:
-#       billing-db:
-#         condition: service_healthy
-#       rabbitmq-queue:
-#         condition: service_healthy
-#     networks:
-#       - app-network
-#     restart: unless-stopped
-
-#   api-gateway:
-#     build:
-#       context: ./api-gateway
-#       dockerfile: Dockerfile
-#     image: api-gateway
-#     container_name: api-gateway
-#     environment:
-#       API_GATEWAY_PORT: ${API_GATEWAY_PORT}
-#       INVENTORY_HOST: ${INVENTORY_DB_HOST}
-#       INVENTORY_PORT: ${INVENTORY_APP_PORT}
-#       RABBITMQ_HOST: ${RABBITMQ_HOST}
-#       RABBITMQ_PORT: ${RABBITMQ_PORT}
-#       RABBITMQ_USER: ${RABBITMQ_USER}
-#       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-#       RABBITMQ_QUEUE_NAME: ${RABBITMQ_QUEUE_NAME}
-#     ports:
-#       - "3000:3000"  # Only service accessible from host/client
-#     depends_on:
-#       inventory-app:
-#         condition: service_started
-#       rabbitmq-queue:
-#         condition: service_healthy
-#     volumes:
-#       - api-gateway-volume:/var/log/api-gateway  # Log persistence
-#     networks:
-#       - app-network
-#     restart: unless-stopped
-
-# volumes:
-#   inventory-database-volume:
-#     name: inventory-database-volume
-#   billing-database-volume:
-#     name: billing-database-volume
-#   rabbitmq_data:
-#   api-gateway-volume:
-#     name: api-gateway-volume
-
-# networks:
-#   app-network:
-#     name: app-network
-#     driver: bridge
